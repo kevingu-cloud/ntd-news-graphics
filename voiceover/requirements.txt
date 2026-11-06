@@ -1,0 +1,2 @@
+edge-tts>=7.0
+opencc-python-reimplemented>=0.1.7

@@ -1,0 +1,6 @@
+.env
+voiceover/output/
+__pycache__/
+*.pyc
+.venv/
+venv/

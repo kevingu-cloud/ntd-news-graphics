@@ -59,8 +59,9 @@ ElevenLabs：帳號已註冊。API 金鑰在 ElevenAPI 平台的「API 密鑰」
 
 1. 用 ElevenLabs 產生同一段口播稿的試聽，和 Azure 比較
 2. 選定聲音
-3. 寫配音工具：輸入文稿 → 分段 → 生成語音 → 合併 → 音量標準化 → 輸出 MP3 和 SRT
-4. 之後再做畫面：用 Remotion 做圖表、地圖、數字卡等動畫模板
+3. ~~寫配音工具~~ 已完成：`voiceover/`（用法見 `voiceover/README.md`）
+4. 在使用者自己的電腦上安裝配音工具並試跑
+5. 之後再做畫面：用 Remotion 做圖表、地圖、數字卡等動畫模板
 
 ## 注意事項
 
