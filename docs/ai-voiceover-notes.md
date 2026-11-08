@@ -23,6 +23,17 @@ Azure（用 edge-tts 免費產生過試聽；正式使用要改用 Azure 官方�
 | `zh-CN-XiaoxiaoNeural` | 溫暖女聲 |
 | `zh-CN-liaoning-XiaobeiNeural` | 東北話女聲 |
 
+ElevenLabs 聲音複製（Creator 方案）：
+
+| 項目 | 內容 |
+|---|---|
+| 聲音名稱 | 東北男聲（即時聲音複製，錄音者本人同意） |
+| 聲音 ID | `o9P71YPfTOzk7mE4q1Wc` |
+| 訓練錄音 | 五段，共約 2 分 30 秒，用本筆記的錄音稿錄製 |
+| 推薦模型 | `eleven_multilingual_v2`（聲紋相似度 0.785，明顯比 `eleven_v3` 的 0.602 像本人；本人另一段錄音為 0.952，Azure 聲音約 0.24～0.33） |
+
+產生配音：`python3 voiceover/voiceover.py 稿子.txt --engine elevenlabs --voice o9P71YPfTOzk7mE4q1Wc`
+
 ElevenLabs：帳號已註冊。API 金鑰在 ElevenAPI 平台的「API 密鑰」頁面建立（左下角切換到 ElevenAPI）。測試用金鑰設定：限制金鑰開啟，文字轉語音「存取」，音色「讀取」，額度上限 5000。免費方案不能商業使用，正式營利要升級付費方案。
 
 ## 口播稿寫法
