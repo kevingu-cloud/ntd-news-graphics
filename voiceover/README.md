@@ -73,6 +73,22 @@ python3 voiceover/voiceover.py 稿子.txt --engine elevenlabs --voice 聲音ID
 | `--max-chars` | 每句字幕最多幾個字，預設 `18` |
 | `--list-voices` | 列出可用的聲音 |
 
+## 讓聲音更有感情（ElevenLabs v3）
+
+用 `--model eleven_v3`，並在稿子裡加情緒標籤，例如：
+
+```
+[excited] 好消息是，营收比市场预期的还要好！
+[sighs] 结果呢，股价一度跌了百分之七。
+[curious] 那这事儿，到底是短期阵痛，还是危险信号？
+```
+
+標籤只會送給 v3，字幕裡會自動拿掉；換成其他引擎或模型時，標籤也會自動略過，不會被念出來。範例見 `sample-script-v3.txt`。
+
+- `--stability 0`：創意模式，情緒最多，偶爾會不穩
+- `--stability 0.5`：自然模式（預設）
+- 用 v2 模型時，可以用 `--stability 0.3 --style-strength 0.45` 加強表現力
+
 ## 修正讀錯的字
 
 在 `voiceover/lexicon.txt` 加一行「原文=實際要念的寫法」，例如：

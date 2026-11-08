@@ -29,6 +29,8 @@ DEFAULT_VOICES = {
     "edge": "zh-CN-YunxiNeural",
     "azure": "zh-CN-YunxiNeural",
 }
+# ElevenLabs v3 的情緒標籤，例如 [excited]、[sighs]；只送給 v3，字幕裡自動拿掉
+TAG_RE = re.compile(r"\[[^\[\]]{1,40}\]\s*")
 SENTENCE_END = "。！？!?；;"
 CLAUSE_END = "，,、：:"
 PUNCT = set(SENTENCE_END + CLAUSE_END + "　 「」『』（）()《》〈〉“”‘’\"'…—-·")
@@ -161,6 +163,7 @@ def synth_elevenlabs(text: str, args) -> tuple[bytes, dict | None]:
         "voice_settings": {
             "stability": args.stability,
             "similarity_boost": 0.75,
+            "style": args.style_strength,
             "use_speaker_boost": True,
             "speed": args.speed,
         },
@@ -312,6 +315,28 @@ def clean_cue(text: str) -> str:
     return text.strip().strip("，,。、；;：: 　")
 
 
+def supports_tags(args) -> bool:
+    return args.engine == "elevenlabs" and args.model.startswith("eleven_v3")
+
+
+def align_to_display(spoken: str, display: str, timing: dict | None) -> dict | None:
+    """把配音文字（可能含情緒標籤）的逐字時間，對應回字幕文字。對不上就回傳 None。"""
+    if not timing or len(timing["characters"]) != len(spoken):
+        return None
+    in_tag = [False] * len(spoken)
+    for match in TAG_RE.finditer(spoken):
+        for i in range(match.start(), match.end()):
+            in_tag[i] = True
+    kept = [i for i in range(len(spoken)) if not in_tag[i]]
+    if "".join(spoken[i] for i in kept) != display:
+        return None
+    return {
+        "characters": [spoken[i] for i in kept],
+        "start": [timing["start"][i] for i in kept],
+        "end": [timing["end"][i] for i in kept],
+    }
+
+
 def cue_times(text: str, cues, duration: float, timing: dict | None):
     """有逐字時間就用精準時間，否則依字數比例分配。"""
     if timing and len(timing["characters"]) == len(text):
@@ -347,7 +372,10 @@ def main() -> None:
     parser.add_argument("--model", default="eleven_multilingual_v2", help="ElevenLabs 模型")
     parser.add_argument("--speed", type=float, default=1.0, help="語速，1.0 為正常")
     parser.add_argument("--style", help="Azure 說話風格，例如 newscast、narration-professional")
-    parser.add_argument("--stability", type=float, default=0.5, help="ElevenLabs 穩定度 0～1，低一點情緒較多")
+    parser.add_argument("--stability", type=float, default=0.5,
+                        help="ElevenLabs 穩定度 0～1，低一點情緒較多；v3 只接受 0（創意）、0.5（自然）、1（穩定）")
+    parser.add_argument("--style-strength", type=float, default=0.0,
+                        help="ElevenLabs 風格誇張度 0～1，高一點更有表現力（v2 有效）")
     parser.add_argument("--t2s", action="store_true", help="配音前把繁體（台灣用語）轉成簡體（大陸用語）")
     parser.add_argument("--lexicon", type=Path, default=SCRIPT_DIR / "lexicon.txt", help="讀音修正表")
     parser.add_argument("--gap", type=float, default=0.4, help="段落之間的停頓秒數")
@@ -382,11 +410,14 @@ def main() -> None:
     pcm_parts, srt_lines, cursor, cue_no = [], [], 0.0, 0
     gap_pcm = b"\x00\x00" * round(args.gap * SAMPLE_RATE)
 
-    for index, display in enumerate(paragraphs, 1):
-        spoken = to_mainland(display) if args.t2s else display
+    for index, line in enumerate(paragraphs, 1):
+        display = TAG_RE.sub("", line).strip()
+        spoken = line if supports_tags(args) else display
+        spoken = to_mainland(spoken) if args.t2s else spoken
         spoken = apply_lexicon(spoken, lexicon)
         fingerprint = json.dumps(
-            [args.engine, args.voice, args.model, args.speed, args.style, args.stability, spoken],
+            [args.engine, args.voice, args.model, args.speed, args.style, args.stability,
+             args.style_strength, spoken],
             ensure_ascii=False,
         )
         digest = hashlib.sha1(fingerprint.encode("utf-8")).hexdigest()[:8]
@@ -406,7 +437,7 @@ def main() -> None:
         pcm = to_pcm(mp3_path)
         duration = len(pcm) / 2 / SAMPLE_RATE
         # 逐字時間只有在字幕文字和配音文字逐字對得上時才用
-        aligned = timing if len(spoken) == len(display) else None
+        aligned = align_to_display(spoken, display, timing)
         cues = split_cues(display, args.max_chars)
         for (a, b), (start, end) in zip(cues, cue_times(display, cues, duration, aligned)):
             cue_no += 1
