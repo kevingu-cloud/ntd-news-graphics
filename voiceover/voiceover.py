@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import difflib
 import hashlib
 import json
 import os
@@ -233,22 +234,27 @@ COMPRESSOR = "acompressor=threshold=0.1:ratio=3:attack=5:release=150"
 LOUDNORM = "loudnorm=I=-14:TP=-1.5:LRA=11"
 
 
-def loudnorm_filter(path: Path) -> str:
-    """兩階段音量標準化到 YouTube 標準 -14 LUFS：先量測，再依量測值精準調整。"""
+def final_filter(path: Path, extra: str | None, compress: bool) -> str:
+    """成品的濾鏡：自訂濾鏡 → 輕度壓縮 → 兩階段音量標準化到 YouTube 標準 -14 LUFS。
+
+    音量標準化先量測、再依量測值精準調整。
+    """
+    chain = [part for part in (extra, COMPRESSOR if compress else None) if part]
+    prefix = ",".join(chain) + "," if chain else ""
     try:
         result = subprocess.run(
             ["ffmpeg", "-hide_banner", "-i", str(path),
-             "-af", f"{COMPRESSOR},{LOUDNORM}:print_format=json", "-f", "null", "-"],
+             "-af", f"{prefix}{LOUDNORM}:print_format=json", "-f", "null", "-"],
             capture_output=True, text=True, check=True,
         )
         stats = json.loads(result.stderr[result.stderr.rindex("{"):])
         return (
-            f"{COMPRESSOR},{LOUDNORM}:measured_I={stats['input_i']}:measured_TP={stats['input_tp']}"
+            f"{prefix}{LOUDNORM}:measured_I={stats['input_i']}:measured_TP={stats['input_tp']}"
             f":measured_LRA={stats['input_lra']}:measured_thresh={stats['input_thresh']}"
             f":offset={stats['target_offset']}:linear=true"
         )
     except (subprocess.CalledProcessError, ValueError, KeyError):
-        return f"{COMPRESSOR},{LOUDNORM}"  # 量測失敗時退回單次標準化
+        return f"{prefix}{LOUDNORM}"  # 量測失敗時退回單次標準化
 
 
 def to_pcm(mp3_path: Path) -> bytes:
@@ -320,7 +326,12 @@ def supports_tags(args) -> bool:
 
 
 def align_to_display(spoken: str, display: str, timing: dict | None) -> dict | None:
-    """把配音文字（可能含情緒標籤）的逐字時間，對應回字幕文字。對不上就回傳 None。"""
+    """把配音文字的逐字時間，對應回字幕文字。
+
+    配音文字可能和字幕不同（情緒標籤、讀音修正、繁簡轉換）。先拿掉標籤，再比對兩段文字：
+    相同或等長的部分逐字對應，長度不同的替換（例如「8,100 萬」念成「八千一百萬」）
+    依比例分配那一段的時間。
+    """
     if not timing or len(timing["characters"]) != len(spoken):
         return None
     in_tag = [False] * len(spoken)
@@ -328,13 +339,28 @@ def align_to_display(spoken: str, display: str, timing: dict | None) -> dict | N
         for i in range(match.start(), match.end()):
             in_tag[i] = True
     kept = [i for i in range(len(spoken)) if not in_tag[i]]
-    if "".join(spoken[i] for i in kept) != display:
-        return None
-    return {
-        "characters": [spoken[i] for i in kept],
-        "start": [timing["start"][i] for i in kept],
-        "end": [timing["end"][i] for i in kept],
-    }
+    plain = "".join(spoken[i] for i in kept)
+    t_start = [timing["start"][i] for i in kept]
+    t_end = [timing["end"][i] for i in kept]
+
+    start, end = [0.0] * len(display), [0.0] * len(display)
+    matcher = difflib.SequenceMatcher(None, display, plain, autojunk=False)
+    for op, a1, a2, b1, b2 in matcher.get_opcodes():
+        if op == "insert":
+            continue
+        if op == "delete":  # 字幕有、配音沒有的字：放在前後文的交界
+            moment = t_start[b1] if b1 < len(plain) else (t_end[-1] if t_end else 0.0)
+            for i in range(a1, a2):
+                start[i] = end[i] = moment
+        elif a2 - a1 == b2 - b1:
+            for k in range(a2 - a1):
+                start[a1 + k], end[a1 + k] = t_start[b1 + k], t_end[b1 + k]
+        else:
+            lo, hi, n = t_start[b1], t_end[b2 - 1], a2 - a1
+            for k in range(n):
+                start[a1 + k] = lo + (hi - lo) * k / n
+                end[a1 + k] = lo + (hi - lo) * (k + 1) / n
+    return {"characters": list(display), "start": start, "end": end}
 
 
 def cue_times(text: str, cues, duration: float, timing: dict | None):
@@ -365,7 +391,9 @@ def srt_time(seconds: float) -> str:
 # ---------- 主流程 ----------
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="口播稿 → AI 配音 MP3 ＋ SRT 字幕")
+    # 參數也可以寫在檔案裡（每行一個），用 @檔名 帶入，例如 @voiceover/channel-voice.args
+    parser = argparse.ArgumentParser(description="口播稿 → AI 配音 MP3 ＋ SRT 字幕",
+                                     fromfile_prefix_chars="@")
     parser.add_argument("script", nargs="?", help="口播稿文字檔（UTF-8，每一行是一段）")
     parser.add_argument("--engine", choices=ENGINES, default="edge")
     parser.add_argument("--voice", help="聲音名稱或 ID")
@@ -375,10 +403,12 @@ def main() -> None:
     parser.add_argument("--stability", type=float, default=0.5,
                         help="ElevenLabs 穩定度 0～1，低一點情緒較多；v3 只接受 0（創意）、0.5（自然）、1（穩定）")
     parser.add_argument("--style-strength", type=float, default=0.0,
-                        help="ElevenLabs 風格誇張度 0～1，高一點更有表現力（v2 有效）")
+                        help="ElevenLabs 風格誇張度 0～1，高一點更有表現力（v2、v4 有效）")
     parser.add_argument("--t2s", action="store_true", help="配音前把繁體（台灣用語）轉成簡體（大陸用語）")
     parser.add_argument("--lexicon", type=Path, default=SCRIPT_DIR / "lexicon.txt", help="讀音修正表")
     parser.add_argument("--gap", type=float, default=0.4, help="段落之間的停頓秒數")
+    parser.add_argument("--filter", help="額外的 ffmpeg 音訊濾鏡（例如調音色的等化器），在音量標準化之前套用")
+    parser.add_argument("--no-compress", action="store_true", help="不做輕度壓縮，保留原本的音量起伏")
     parser.add_argument("--max-chars", type=int, default=18, help="每句字幕最多幾個字")
     parser.add_argument("-o", "--out", type=Path, help="輸出資料夾")
     parser.add_argument("--list-voices", action="store_true", help="列出可用的聲音")
@@ -436,7 +466,9 @@ def main() -> None:
 
         pcm = to_pcm(mp3_path)
         duration = len(pcm) / 2 / SAMPLE_RATE
-        # 逐字時間只有在字幕文字和配音文字逐字對得上時才用
+        if pcm_parts:  # 段落之間的停頓要先算進時間軸，字幕才不會提早
+            pcm_parts.append(gap_pcm)
+            cursor += args.gap
         aligned = align_to_display(spoken, display, timing)
         cues = split_cues(display, args.max_chars)
         for (a, b), (start, end) in zip(cues, cue_times(display, cues, duration, aligned)):
@@ -445,9 +477,6 @@ def main() -> None:
                 f"{cue_no}\n{srt_time(cursor + start)} --> {srt_time(cursor + end)}\n"
                 f"{clean_cue(display[a:b])}\n"
             )
-        if pcm_parts:
-            pcm_parts.append(gap_pcm)
-            cursor += args.gap
         pcm_parts.append(pcm)
         cursor += duration
 
@@ -459,7 +488,7 @@ def main() -> None:
         wav.writeframes(b"".join(pcm_parts))
 
     mp3_out = out_dir / "voice.mp3"
-    ffmpeg("-y", "-i", str(wav_path), "-af", loudnorm_filter(wav_path),
+    ffmpeg("-y", "-i", str(wav_path), "-af", final_filter(wav_path, args.filter, not args.no_compress),
            "-ar", str(SAMPLE_RATE), "-b:a", "192k", str(mp3_out))
     wav_path.unlink()
     (out_dir / "voice.srt").write_text("\n".join(srt_lines), encoding="utf-8")

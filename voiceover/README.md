@@ -52,6 +52,16 @@ python3 voiceover/voiceover.py 稿子.txt --engine elevenlabs --voice 聲音ID
 | `voice.srt` | 字幕，可直接匯入剪輯軟體或上傳 YouTube |
 | `segments/` | 每一段的音檔（快取用） |
 
+## 頻道的固定聲音
+
+頻道選定的聲音和設定存在 `voiceover/channel-voice.args`（ElevenLabs 的「領讀聲音2-清亮C」、v4 模型、調輕音色的濾鏡）。每支影片都用同一行指令：
+
+```
+python3 voiceover/voiceover.py 稿子.txt @voiceover/channel-voice.args
+```
+
+稿子**一行放一整段**（2～7 句）。AI 一次念一整段，語氣比一句一句分開念連貫。改了哪一段，再跑一次只會重新生成那一段。
+
 ## 配音引擎
 
 | 引擎 | 說明 |
@@ -70,6 +80,9 @@ python3 voiceover/voiceover.py 稿子.txt --engine elevenlabs --voice 聲音ID
 | `--style` | Azure 說話風格，例如 `newscast`、`narration-professional` |
 | `--stability` | ElevenLabs 穩定度 0～1，低一點情緒較多，太低會不穩 |
 | `--gap` | 段落之間停頓幾秒，預設 `0.4` |
+| `--filter` | 額外的 ffmpeg 音訊濾鏡，例如調音色的等化器，在音量標準化之前套用 |
+| `--no-compress` | 不做輕度壓縮，保留原本的音量起伏 |
+| `@檔名` | 從檔案讀取參數（每行一個），例如 `@voiceover/channel-voice.args` |
 | `--max-chars` | 每句字幕最多幾個字，預設 `18` |
 | `--list-voices` | 列出可用的聲音 |
 
