@@ -32,6 +32,8 @@ DEFAULT_VOICES = {
 }
 # ElevenLabs v3 的情緒標籤，例如 [excited]、[sighs]；只送給 v3，字幕裡自動拿掉
 TAG_RE = re.compile(r"\[[^\[\]]{1,40}\]\s*")
+# 單獨一行的 [停頓 2]：插入 2 秒空白，不念稿（留位置給原聲片段，或讓章節之間停久一點）
+PAUSE_RE = re.compile(r"^\[(?:停頓|pause)\s*(\d+(?:\.\d+)?)\s*秒?\]$")
 SENTENCE_END = "。！？!?；;"
 CLAUSE_END = "，,、：:"
 PUNCT = set(SENTENCE_END + CLAUSE_END + "　 「」『』（）()《》〈〉“”‘’\"'…—-·")
@@ -441,6 +443,13 @@ def main() -> None:
     gap_pcm = b"\x00\x00" * round(args.gap * SAMPLE_RATE)
 
     for index, line in enumerate(paragraphs, 1):
+        pause = PAUSE_RE.match(line)
+        if pause:
+            seconds = float(pause.group(1))
+            print(f"[{index}/{len(paragraphs)}] 停頓 {seconds:g} 秒，位置 {srt_time(cursor)}")
+            pcm_parts.append(b"\x00\x00" * round(seconds * SAMPLE_RATE))
+            cursor += seconds
+            continue
         display = TAG_RE.sub("", line).strip()
         spoken = line if supports_tags(args) else display
         spoken = to_mainland(spoken) if args.t2s else spoken
