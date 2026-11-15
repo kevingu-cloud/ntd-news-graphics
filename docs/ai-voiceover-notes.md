@@ -103,6 +103,31 @@ ElevenLabs：帳號已註冊。API 金鑰在 ElevenAPI 平台的「API 密鑰」
 6. 參考節奏（小Lin說，4 支影片共 24 分鐘的量測）：語速約 5.5 字／秒，每分鐘停頓約 8 次，兩次停頓之間約 43 字
 7. 用量：念稿約每字 1 點，變聲約每分鐘 660 點，人聲分離和聲音設計試聽也不便宜
 
+## ElevenLabs 官方文件的重點（2026-11-15 讀過）
+
+使用者聽完整支配音後的回饋：語速要更快，不要播音腔，也不要像講故事，要「財經聊天型主播」的風格。照官方文件重新檢查後，發現之前的做法有幾個問題：
+
+1. **`eleven_v4` 沒有 speed 和 style 這兩個設定**，只有 stability 和 similarity。之前調的 speed 1.15／1.2 和 style 都沒有作用
+2. **用文字設計（Voice Design）或重塑（Remix）出來的聲音，在 v4 上表現力較差**。領讀聲音2、清亮C、聊天C 都屬於這一類，所以聽起來像念稿
+3. **v4 最適合真人錄音複製的聲音**（IVC／PVC），會忠實重現原錄音的音色、節奏、說話方式和口音。語速由原始錄音決定
+4. 複製聲音時，錄音要 1～2 分鐘、乾淨、**說話方式前後一致**，AI 會照錄音的語速和情緒來講
+5. v4 可以用一句話描述語氣的標籤，例如 `[Casual and upbeat, like a finance YouTuber chatting with friends, brisk pace]`；標籤會讓語速變快、音調變高
+6. **稿子的寫法強烈影響念法**：書面短句會被念成播報，改成口語（你想啊、對吧、所以啊）才會像聊天
+7. 聲音庫的聲音有「通知期」：原作者下架後，已加入的人還能用這麼久。中文男聲多半是 730 天，ElevenLabs 官方的幾個聲音是 4015 天
+
+已加入帳號、正在比較的聲音庫中文男聲（真人錄製，試聽語速 5～7 字／秒）：
+
+| 名稱 | 聲音 ID | 通知期 |
+|---|---|---|
+| Zhan - Steady and composed | `cIgfFHYNnHGsenWoEwaO` | 4015 天 |
+| Jun - Bright and energetic | `5s3UifUu3OJ90z17rRMA` | 4015 天 |
+| Arthur - Chinese Male | `xQsp9uyB3OResmXFYuFx` | 730 天 |
+| Qiao Feng - Warm, Clear & Friendly | `ZJsn5HnrE3eUbep2ia8D` | 730 天 |
+| Paul - Educational | `kF39bkI2EAwLmrQg2Sdv` | 730 天 |
+| Aaron S - Natural, Warm & Pleasant | `No3kTHIcxiMawVDYwbmo` | 730 天 |
+
+用便當店那段的聊天稿測試，這些聲音用 v4 念的整體語速是 4.1～4.7 字／秒（清亮C 是 3.6～3.9），停頓也比較短。等使用者選定聲音後，要更新 `voiceover/channel-voice.args`（拿掉沒有作用的 speed 和 style）。
+
 ## 下一步
 
 1. 確認油價片 V13.1 整支配音的試聽（2026-11-15 已用清亮C 生成，10 分 55 秒，33 段；0:52～1:00 留了 8 秒空白給原聲）。稿子還不是定稿，改稿後重跑只會重新生成有改動的段落
