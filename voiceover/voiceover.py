@@ -30,8 +30,8 @@ DEFAULT_VOICES = {
     "edge": "zh-CN-YunxiNeural",
     "azure": "zh-CN-YunxiNeural",
 }
-# ElevenLabs v3 的情緒標籤，例如 [excited]、[sighs]；只送給 v3，字幕裡自動拿掉
-TAG_RE = re.compile(r"\[[^\[\]]{1,40}\]\s*")
+# ElevenLabs v3、v4 的語氣標籤，例如 [excited]、[sighs]，或一句話描述語氣；字幕裡自動拿掉
+TAG_RE = re.compile(r"\[[^\[\]]{1,200}\]\s*")
 # 單獨一行的 [停頓 2]：插入 2 秒空白，不念稿（留位置給原聲片段，或讓章節之間停久一點）
 PAUSE_RE = re.compile(r"^\[(?:停頓|pause)\s*(\d+(?:\.\d+)?)\s*秒?\]$")
 SENTENCE_END = "。！？!?；;"
@@ -154,23 +154,52 @@ def synth_azure(text: str, args) -> tuple[bytes, None]:
     return audio, None
 
 
+def forced_alignment(audio: bytes, text: str, key: str) -> dict | None:
+    """用 ElevenLabs 的強制對齊，從成品音檔量出每個字的時間。失敗就回傳 None。"""
+    boundary = "----voiceover" + hashlib.sha1(audio[:256]).hexdigest()
+    body = (
+        f'--{boundary}\r\nContent-Disposition: form-data; name="text"\r\n\r\n'.encode("utf-8")
+        + text.encode("utf-8") + b"\r\n"
+        + f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.mp3"\r\n'
+          f"Content-Type: audio/mpeg\r\n\r\n".encode("utf-8")
+        + audio + f"\r\n--{boundary}--\r\n".encode("utf-8")
+    )
+    request = urllib.request.Request(
+        "https://api.elevenlabs.io/v1/forced-alignment", data=body, method="POST",
+        headers={"xi-api-key": key, "Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=300) as response:
+            chars = json.loads(response.read()).get("characters") or []
+    except (urllib.error.URLError, ValueError):
+        return None
+    if "".join(c["text"] for c in chars) != text:
+        return None
+    return {
+        "characters": [c["text"] for c in chars],
+        "start": [c["start"] for c in chars],
+        "end": [c["end"] for c in chars],
+    }
+
+
 def synth_elevenlabs(text: str, args) -> tuple[bytes, dict | None]:
     key = os.environ.get("ELEVENLABS_API_KEY")
     if not key:
         sys.exit("請在 .env 設定 ELEVENLABS_API_KEY")
     if not args.voice:
         sys.exit("ElevenLabs 要指定 --voice（聲音 ID），可用 --list-voices 查詢")
-    body = {
-        "text": text,
-        "model_id": args.model,
-        "voice_settings": {
-            "stability": args.stability,
-            "similarity_boost": 0.75,
-            "style": args.style_strength,
-            "use_speaker_boost": True,
-            "speed": args.speed,
-        },
-    }
+    settings = {"stability": args.stability, "similarity_boost": 0.75}
+    if not args.model.startswith("eleven_v4"):  # v4 只有穩定度和相似度，沒有風格和語速
+        settings.update(style=args.style_strength, use_speaker_boost=True, speed=args.speed)
+    body = {"text": text, "model_id": args.model, "voice_settings": settings}
+    if TAG_RE.search(text):
+        # 有語氣標籤時，生成時附帶的逐字時間不可靠（標籤會佔掉開頭幾秒），改從成品音檔量
+        audio = http_post(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{args.voice}?output_format=mp3_44100_128",
+            {"xi-api-key": key, "Content-Type": "application/json"},
+            json.dumps(body, ensure_ascii=False).encode("utf-8"),
+        )
+        return audio, forced_alignment(audio, TAG_RE.sub("", text), key)
     raw = http_post(
         f"https://api.elevenlabs.io/v1/text-to-speech/{args.voice}/with-timestamps"
         "?output_format=mp3_44100_128",
@@ -324,7 +353,7 @@ def clean_cue(text: str) -> str:
 
 
 def supports_tags(args) -> bool:
-    return args.engine == "elevenlabs" and args.model.startswith("eleven_v3")
+    return args.engine == "elevenlabs" and args.model.startswith(("eleven_v3", "eleven_v4"))
 
 
 def align_to_display(spoken: str, display: str, timing: dict | None) -> dict | None:
@@ -334,7 +363,7 @@ def align_to_display(spoken: str, display: str, timing: dict | None) -> dict | N
     相同或等長的部分逐字對應，長度不同的替換（例如「8,100 萬」念成「八千一百萬」）
     依比例分配那一段的時間。
     """
-    if not timing or len(timing["characters"]) != len(spoken):
+    if not timing:
         return None
     in_tag = [False] * len(spoken)
     for match in TAG_RE.finditer(spoken):
@@ -342,8 +371,13 @@ def align_to_display(spoken: str, display: str, timing: dict | None) -> dict | N
             in_tag[i] = True
     kept = [i for i in range(len(spoken)) if not in_tag[i]]
     plain = "".join(spoken[i] for i in kept)
-    t_start = [timing["start"][i] for i in kept]
-    t_end = [timing["end"][i] for i in kept]
+    if len(timing["characters"]) == len(spoken):      # 時間對應含標籤的全文
+        t_start = [timing["start"][i] for i in kept]
+        t_end = [timing["end"][i] for i in kept]
+    elif len(timing["characters"]) == len(plain):     # 時間對應拿掉標籤後的文字
+        t_start, t_end = timing["start"], timing["end"]
+    else:
+        return None
 
     start, end = [0.0] * len(display), [0.0] * len(display)
     matcher = difflib.SequenceMatcher(None, display, plain, autojunk=False)
@@ -363,6 +397,16 @@ def align_to_display(spoken: str, display: str, timing: dict | None) -> dict | N
                 start[a1 + k] = lo + (hi - lo) * k / n
                 end[a1 + k] = lo + (hi - lo) * (k + 1) / n
     return {"characters": list(display), "start": start, "end": end}
+
+
+MAX_GAP = 2.0  # 秒；正常的停頓不會這麼長
+
+
+def longest_gap(timing: dict | None) -> float:
+    """逐字時間裡最長的空檔。空檔很長，通常是 AI 多念了稿子上沒有的話（例如重複一句）或卡住。"""
+    if not timing or len(timing["start"]) < 2:
+        return 0.0
+    return max(timing["start"][i + 1] - timing["end"][i] for i in range(len(timing["start"]) - 1))
 
 
 def cue_times(text: str, cues, duration: float, timing: dict | None):
@@ -400,12 +444,15 @@ def main() -> None:
     parser.add_argument("--engine", choices=ENGINES, default="edge")
     parser.add_argument("--voice", help="聲音名稱或 ID")
     parser.add_argument("--model", default="eleven_multilingual_v2", help="ElevenLabs 模型")
-    parser.add_argument("--speed", type=float, default=1.0, help="語速，1.0 為正常")
+    parser.add_argument("--speed", type=float, default=1.0, help="語速，1.0 為正常（ElevenLabs v4 不支援）")
+    parser.add_argument("--direction",
+                        help="ElevenLabs v3、v4：用一句英文描述整支配音的語氣，會加在每一段前面，"
+                             "例如 \"Relaxed and confident, like a finance podcast host chatting with a friend\"")
     parser.add_argument("--style", help="Azure 說話風格，例如 newscast、narration-professional")
     parser.add_argument("--stability", type=float, default=0.5,
                         help="ElevenLabs 穩定度 0～1，低一點情緒較多；v3 只接受 0（創意）、0.5（自然）、1（穩定）")
     parser.add_argument("--style-strength", type=float, default=0.0,
-                        help="ElevenLabs 風格誇張度 0～1，高一點更有表現力（v2、v4 有效）")
+                        help="ElevenLabs 風格誇張度 0～1，高一點更有表現力（v2 有效）")
     parser.add_argument("--t2s", action="store_true", help="配音前把繁體（台灣用語）轉成簡體（大陸用語）")
     parser.add_argument("--lexicon", type=Path, default=SCRIPT_DIR / "lexicon.txt", help="讀音修正表")
     parser.add_argument("--gap", type=float, default=0.4, help="段落之間的停頓秒數")
@@ -454,6 +501,8 @@ def main() -> None:
         spoken = line if supports_tags(args) else display
         spoken = to_mainland(spoken) if args.t2s else spoken
         spoken = apply_lexicon(spoken, lexicon)
+        if args.direction and supports_tags(args):
+            spoken = f"[{args.direction}] {spoken}"
         fingerprint = json.dumps(
             [args.engine, args.voice, args.model, args.speed, args.style, args.stability,
              args.style_strength, spoken],
@@ -466,9 +515,23 @@ def main() -> None:
         if mp3_path.exists():
             print(f"[{index}/{len(paragraphs)}] 沿用已生成的音檔")
             timing = json.loads(timing_path.read_text()) if timing_path.exists() else None
+            if timing is None and args.engine == "elevenlabs" and os.environ.get("ELEVENLABS_API_KEY"):
+                # 沒有逐字時間（例如之前量測失敗）：從已生成的音檔補量，不用重新配音
+                timing = forced_alignment(mp3_path.read_bytes(), TAG_RE.sub("", spoken),
+                                          os.environ["ELEVENLABS_API_KEY"])
+                if timing:
+                    timing_path.write_text(json.dumps(timing, ensure_ascii=False))
         else:
-            print(f"[{index}/{len(paragraphs)}] 生成中：{spoken[:30]}…")
-            audio, timing = synth(spoken, args)
+            print(f"[{index}/{len(paragraphs)}] 生成中：{display[:30]}…")
+            for attempt in range(1, 4):
+                audio, timing = synth(spoken, args)
+                gap = longest_gap(timing)
+                if gap <= MAX_GAP:
+                    break
+                if attempt < 3:
+                    print(f"    有 {gap:.1f} 秒對不上稿子（可能多念了一句或卡住），重念第 {attempt + 1} 次")
+                else:
+                    print(f"    注意：重念 3 次後仍有 {gap:.1f} 秒對不上稿子，這一段請人工聽一下")
             mp3_path.write_bytes(audio)
             if timing:
                 timing_path.write_text(json.dumps(timing, ensure_ascii=False))

@@ -130,6 +130,16 @@ ElevenLabs：帳號已註冊。API 金鑰在 ElevenAPI 平台的「API 密鑰」
 
 用便當店那段的聊天稿測試，這些聲音用 v4 念的整體語速是 4.1～4.7 字／秒（清亮C 是 3.6～3.9），停頓也比較短。等使用者選定聲音後，要更新 `voiceover/channel-voice.args`（拿掉沒有作用的 speed 和 style）。
 
+## 目前選定的頻道聲音（2026-11-15）
+
+使用者選定「低1」：**頻道聲音-自有v1**（`ckvARbVhLQpuwQIyDkiw`）+ `eleven_v4`（stability 0.4、similarity 0.75）+ 語氣提示 `Relaxed and confident, slightly lower-pitched voice, like a finance podcast host chatting with a friend, brisk pace`。不做任何音色後製。設定存在 `voiceover/channel-voice.args`，取代之前的清亮C。
+
+- 其他版本：v1-低 `YGw2Z1mEprqkQpWhf7Zo`、v1-更低 `bCcqQUrOEhhp66p8waeC`（訓練錄音分別調低 1.5、3 個半音）、v2 `3KKAttJOjBrb6iVoo7sv`（Arthur 用沉穩語氣重新示範）
+- 這個聲音是即時複製，不會越用越好。要改進就做新版本：Arthur 用想要的語氣念 1～2 分鐘聊天稿 → 變聲成明亮版5 → 即時複製 → 跟舊版念同一段比較。不要用它自己的成品回頭訓練；專業複製（30 分鐘）只能用本人真聲並通過驗證，不適用
+- **v4 偶爾會多念一句**（重複上一句）。配音工具已加上自動檢查和重念；整支做完後仍要用語音轉文字比對一次
+- 有語氣提示時，生成時附帶的逐字時間不準，工具改用強制對齊（forced alignment）從成品音檔量
+- 油價片 V13.1 已改寫成聊天版（事實、數字不動，只改說法；每段的數字都跟原稿核對過），等使用者審稿後再配整支
+
 ## 下一步
 
 1. 確認油價片 V13.1 整支配音的試聽（2026-11-15 已用清亮C 生成，10 分 55 秒，33 段；0:52～1:00 留了 8 秒空白給原聲）。稿子還不是定稿，改稿後重跑只會重新生成有改動的段落

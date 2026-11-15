@@ -54,7 +54,7 @@ python3 voiceover/voiceover.py 稿子.txt --engine elevenlabs --voice 聲音ID
 
 ## 頻道的固定聲音
 
-頻道選定的聲音和設定存在 `voiceover/channel-voice.args`（ElevenLabs 的「領讀聲音2-清亮C」、v4 模型、調輕音色的濾鏡）。每支影片都用同一行指令：
+頻道選定的聲音和設定存在 `voiceover/channel-voice.args`（ElevenLabs 的「頻道聲音-自有v1」、v4 模型，加上一句「放鬆、自信、像財經 podcast 主持人跟朋友聊天」的語氣提示）。每支影片都用同一行指令：
 
 ```
 python3 voiceover/voiceover.py 稿子.txt @voiceover/channel-voice.args
@@ -81,6 +81,7 @@ python3 voiceover/voiceover.py 稿子.txt @voiceover/channel-voice.args
 | `--t2s` | 繁體（台灣用語）轉簡體（大陸用語）後再配音 |
 | `--style` | Azure 說話風格，例如 `newscast`、`narration-professional` |
 | `--stability` | ElevenLabs 穩定度 0～1，低一點情緒較多，太低會不穩 |
+| `--direction` | ElevenLabs v3、v4：用一句英文描述整支配音的語氣，會自動加在每一段前面，字幕不受影響 |
 | `--gap` | 段落之間停頓幾秒，預設 `0.4` |
 | `--filter` | 額外的 ffmpeg 音訊濾鏡，例如調音色的等化器，在音量標準化之前套用 |
 | `--no-compress` | 不做輕度壓縮，保留原本的音量起伏 |
@@ -103,6 +104,10 @@ python3 voiceover/voiceover.py 稿子.txt @voiceover/channel-voice.args
 - `--stability 0`：創意模式，情緒最多，偶爾會不穩
 - `--stability 0.5`：自然模式（預設）
 - 用 v2 模型時，可以用 `--stability 0.3 --style-strength 0.45` 加強表現力
+
+## 自動檢查
+
+用 ElevenLabs 配音時，AI 偶爾會多念一句稿子上沒有的話（例如把上一句重複一遍）。工具在每一段念完後，會從成品音檔量出每個字的時間；如果中間有超過 2 秒對不上稿子，就自動重念，最多 3 次，仍然不行會提示你人工聽那一段。字幕的時間也是用這個量測結果，所以加了語氣提示也對得準。
 
 ## 修正讀錯的字
 
