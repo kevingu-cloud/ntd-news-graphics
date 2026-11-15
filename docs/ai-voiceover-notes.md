@@ -126,6 +126,8 @@ ElevenLabs：帳號已註冊。API 金鑰在 ElevenAPI 平台的「API 密鑰」
 | Paul - Educational | `kF39bkI2EAwLmrQg2Sdv` | 730 天 |
 | Aaron S - Natural, Warm & Pleasant | `No3kTHIcxiMawVDYwbmo` | 730 天 |
 
+**頻道自有聲音 v1**（`ckvARbVhLQpuwQIyDkiw`，名稱「頻道聲音-自有v1」）：使用者提出「先用 Arthur 配、再訓練自己的聲音」。直接複製 Arthur 的聲音不可行（ElevenLabs 規定只能複製自己的聲音，Arthur 是真人配音員）。可行的做法是：Arthur 用 v4 念約 80 秒的聊天稿當示範 → 用變聲器換成明亮版5 的音色 → 用這些錄音做即時複製。結果：用 v4 念的語速 4.5 字／秒，跟 Arthur 一樣；聲紋比對較接近明亮版5（0.75），離 Arthur 較遠（0.60，兩個不同聲音的基準約 0.54）；上傳時 ElevenLabs 沒有判定為聲音庫的聲音。
+
 用便當店那段的聊天稿測試，這些聲音用 v4 念的整體語速是 4.1～4.7 字／秒（清亮C 是 3.6～3.9），停頓也比較短。等使用者選定聲音後，要更新 `voiceover/channel-voice.args`（拿掉沒有作用的 speed 和 style）。
 
 ## 下一步
