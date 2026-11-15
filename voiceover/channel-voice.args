@@ -2,6 +2,6 @@
 --voice=ckvARbVhLQpuwQIyDkiw
 --model=eleven_v4
 --stability=0.4
---direction=Relaxed and confident, slightly lower-pitched voice, like a finance podcast host chatting with a friend, brisk pace
+--direction=Relaxed, confident, slightly lower voice, brisk pace
 --gap=0.35
 --no-compress

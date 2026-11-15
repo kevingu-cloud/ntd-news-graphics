@@ -399,14 +399,19 @@ def align_to_display(spoken: str, display: str, timing: dict | None) -> dict | N
     return {"characters": list(display), "start": start, "end": end}
 
 
-MAX_GAP = 2.0  # 秒；正常的停頓不會這麼長
+MAX_GAP = 1.2  # 秒；正常的停頓不會這麼長
 
 
-def longest_gap(timing: dict | None) -> float:
-    """逐字時間裡最長的空檔。空檔很長，通常是 AI 多念了稿子上沒有的話（例如重複一句）或卡住。"""
-    if not timing or len(timing["start"]) < 2:
+def unexplained_seconds(timing: dict | None, duration: float) -> float:
+    """音檔裡對不上稿子的最長一段：第一個字之前、字和字之間、最後一個字之後。
+
+    這一段很長，通常是 AI 多念了稿子上沒有的話（最常見的是把開頭或結尾重複一遍）或卡住。
+    """
+    if not timing or not timing["start"]:
         return 0.0
-    return max(timing["start"][i + 1] - timing["end"][i] for i in range(len(timing["start"]) - 1))
+    starts, ends = timing["start"], timing["end"]
+    inner = max((starts[i + 1] - ends[i] for i in range(len(starts) - 1)), default=0.0)
+    return max(starts[0], inner, duration - ends[-1])
 
 
 def cue_times(text: str, cues, duration: float, timing: dict | None):
@@ -446,8 +451,8 @@ def main() -> None:
     parser.add_argument("--model", default="eleven_multilingual_v2", help="ElevenLabs 模型")
     parser.add_argument("--speed", type=float, default=1.0, help="語速，1.0 為正常（ElevenLabs v4 不支援）")
     parser.add_argument("--direction",
-                        help="ElevenLabs v3、v4：用一句英文描述整支配音的語氣，會加在每一段前面，"
-                             "例如 \"Relaxed and confident, like a finance podcast host chatting with a friend\"")
+                        help="ElevenLabs v3、v4：用幾個英文詞描述整支配音的語氣，會加在每一段前面，"
+                             "例如 \"Relaxed, confident, brisk pace\"。要短：實測超過一百個字元的提示會讓 AI 常常多念一句")
     parser.add_argument("--style", help="Azure 說話風格，例如 newscast、narration-professional")
     parser.add_argument("--stability", type=float, default=0.5,
                         help="ElevenLabs 穩定度 0～1，低一點情緒較多；v3 只接受 0（創意）、0.5（自然）、1（穩定）")
@@ -525,14 +530,14 @@ def main() -> None:
             print(f"[{index}/{len(paragraphs)}] 生成中：{display[:30]}…")
             for attempt in range(1, 4):
                 audio, timing = synth(spoken, args)
-                gap = longest_gap(timing)
+                mp3_path.write_bytes(audio)
+                gap = unexplained_seconds(timing, len(to_pcm(mp3_path)) / 2 / SAMPLE_RATE)
                 if gap <= MAX_GAP:
                     break
                 if attempt < 3:
                     print(f"    有 {gap:.1f} 秒對不上稿子（可能多念了一句或卡住），重念第 {attempt + 1} 次")
                 else:
                     print(f"    注意：重念 3 次後仍有 {gap:.1f} 秒對不上稿子，這一段請人工聽一下")
-            mp3_path.write_bytes(audio)
             if timing:
                 timing_path.write_text(json.dumps(timing, ensure_ascii=False))
 
