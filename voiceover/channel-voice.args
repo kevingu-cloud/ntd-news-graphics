@@ -1,6 +1,7 @@
 --engine=elevenlabs
 --voice=ckvARbVhLQpuwQIyDkiw
 --model=eleven_v4
+--language=zh
 --stability=0.4
 --direction=Relaxed, confident, slightly lower voice, brisk pace
 --gap=0.35

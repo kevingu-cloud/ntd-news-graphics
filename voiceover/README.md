@@ -62,6 +62,8 @@ python3 voiceover/voiceover.py 稿子.txt @voiceover/channel-voice.args
 
 稿子**一行放一整段**（2～7 句）。AI 一次念一整段，語氣比一句一句分開念連貫。改了哪一段，再跑一次只會重新生成那一段。
 
+某一段想用不同的語氣時，在那一段的開頭自己寫一個標籤，例如 `[Curious, energetic, brisk pace] 那拿什麼墊呢？……`，這一段就會用它取代整體語氣。標籤要短，字幕裡不會出現。
+
 單獨一行寫 `[停頓 8]`，會插入 8 秒的空白、不念稿，執行時會顯示它在成品裡的時間位置。可以用來留位置給原聲片段，或讓章節之間停久一點（例如 `[停頓 0.6]`）。
 
 ## 配音引擎
@@ -81,6 +83,7 @@ python3 voiceover/voiceover.py 稿子.txt @voiceover/channel-voice.args
 | `--t2s` | 繁體（台灣用語）轉簡體（大陸用語）後再配音 |
 | `--style` | Azure 說話風格，例如 `newscast`、`narration-professional` |
 | `--stability` | ElevenLabs 穩定度 0～1，低一點情緒較多，太低會不穩 |
+| `--language` | ElevenLabs：指定語言，例如 `zh`。可以避免 AI 把某些中文詞念成像英文的音 |
 | `--direction` | ElevenLabs v3、v4：用幾個英文詞描述整支配音的語氣，會自動加在每一段前面，字幕不受影響。**要短**：實測超過一百個字元的提示，會讓 AI 常常多念一句 |
 | `--gap` | 段落之間停頓幾秒，預設 `0.4` |
 | `--filter` | 額外的 ffmpeg 音訊濾鏡，例如調音色的等化器，在音量標準化之前套用 |

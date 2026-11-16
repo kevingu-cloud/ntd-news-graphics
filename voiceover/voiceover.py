@@ -192,6 +192,8 @@ def synth_elevenlabs(text: str, args) -> tuple[bytes, dict | None]:
     if not args.model.startswith("eleven_v4"):  # v4 只有穩定度和相似度，沒有風格和語速
         settings.update(style=args.style_strength, use_speaker_boost=True, speed=args.speed)
     body = {"text": text, "model_id": args.model, "voice_settings": settings}
+    if args.language:  # 指定語言，避免 AI 把某些中文詞念成像英文的音
+        body["language_code"] = args.language
     if TAG_RE.search(text):
         # 有語氣標籤時，生成時附帶的逐字時間不可靠（標籤會佔掉開頭幾秒），改從成品音檔量
         audio = http_post(
@@ -450,6 +452,7 @@ def main() -> None:
     parser.add_argument("--voice", help="聲音名稱或 ID")
     parser.add_argument("--model", default="eleven_multilingual_v2", help="ElevenLabs 模型")
     parser.add_argument("--speed", type=float, default=1.0, help="語速，1.0 為正常（ElevenLabs v4 不支援）")
+    parser.add_argument("--language", help="ElevenLabs：指定語言代碼，例如 zh。不影響已經生成的段落")
     parser.add_argument("--direction",
                         help="ElevenLabs v3、v4：用幾個英文詞描述整支配音的語氣，會加在每一段前面，"
                              "例如 \"Relaxed, confident, brisk pace\"。要短：實測超過一百個字元的提示會讓 AI 常常多念一句")
@@ -506,7 +509,8 @@ def main() -> None:
         spoken = line if supports_tags(args) else display
         spoken = to_mainland(spoken) if args.t2s else spoken
         spoken = apply_lexicon(spoken, lexicon)
-        if args.direction and supports_tags(args):
+        # 整體語氣加在每一段前面；段落開頭自己寫了語氣標籤的，就用它自己的
+        if args.direction and supports_tags(args) and not TAG_RE.match(spoken):
             spoken = f"[{args.direction}] {spoken}"
         fingerprint = json.dumps(
             [args.engine, args.voice, args.model, args.speed, args.style, args.stability,
