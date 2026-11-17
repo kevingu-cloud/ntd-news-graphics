@@ -1,8 +1,9 @@
 --engine=elevenlabs
---voice=ckvARbVhLQpuwQIyDkiw
+--voice=H50cNQAWXWJg6dU3bWQz
 --model=eleven_v4
 --language=zh
 --stability=0.4
---direction=Relaxed, confident, slightly lower voice, brisk pace
+--direction=Confident, energetic, brisk pace
 --gap=0.35
 --no-compress
+--verify

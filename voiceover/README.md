@@ -54,7 +54,7 @@ python3 voiceover/voiceover.py 稿子.txt --engine elevenlabs --voice 聲音ID
 
 ## 頻道的固定聲音
 
-頻道選定的聲音和設定存在 `voiceover/channel-voice.args`（ElevenLabs 的「頻道聲音-自有v1」、v4 模型，加上「放鬆、自信、聲音低一點、節奏快」的語氣提示）。每支影片都用同一行指令：
+頻道選定的聲音和設定存在 `voiceover/channel-voice.args`（ElevenLabs 的「頻道聲音-自有v3」、v4 模型，加上「自信、有精神、節奏快」的語氣提示，並開啟逐段核對）。每支影片都用同一行指令：
 
 ```
 python3 voiceover/voiceover.py 稿子.txt @voiceover/channel-voice.args
@@ -83,6 +83,7 @@ python3 voiceover/voiceover.py 稿子.txt @voiceover/channel-voice.args
 | `--t2s` | 繁體（台灣用語）轉簡體（大陸用語）後再配音 |
 | `--style` | Azure 說話風格，例如 `newscast`、`narration-professional` |
 | `--stability` | ElevenLabs 穩定度 0～1，低一點情緒較多，太低會不穩 |
+| `--verify` | ElevenLabs：每一段念完都轉回文字跟稿子比對，念含糊、漏字或多念就自動重念 |
 | `--language` | ElevenLabs：指定語言，例如 `zh`。可以避免 AI 把某些中文詞念成像英文的音 |
 | `--direction` | ElevenLabs v3、v4：用幾個英文詞描述整支配音的語氣，會自動加在每一段前面，字幕不受影響。**要短**：實測超過一百個字元的提示，會讓 AI 常常多念一句 |
 | `--gap` | 段落之間停頓幾秒，預設 `0.4` |
@@ -110,11 +111,14 @@ python3 voiceover/voiceover.py 稿子.txt @voiceover/channel-voice.args
 
 ## 自動檢查
 
-用 ElevenLabs 配音時，AI 偶爾會多念一句稿子上沒有的話（例如把上一句重複一遍）。工具在每一段念完後，會從成品音檔量出每個字的時間；如果開頭、中間或結尾有超過 1.2 秒對不上稿子，就自動重念，最多 3 次，仍然不行會提示你人工聽那一段。字幕的時間也是用這個量測結果，所以加了語氣提示也對得準。
+用 ElevenLabs 配音時，AI 偶爾會多念一句稿子上沒有的話（例如把上一句重複一遍），或把某個詞念得含糊。工具在每一段念完後做兩種檢查，不通過就自動重念，最多 3 次，仍然不行會提示你人工聽那一段：
+
+1. **時間檢查**（一定會做）：從成品音檔量出每個字的時間，如果開頭、中間或結尾有超過 1.2 秒對不上稿子，就是多念了或卡住。字幕的時間也是用這個量測結果。
+2. **文字核對**（加上 `--verify`）：把音檔轉回文字跟稿子比對，有三個字以上對不上就重念。只差一兩個字的不算，那通常是同音字。
 
 ## 修正讀錯的字
 
-在 `voiceover/lexicon.txt` 加一行「原文=實際要念的寫法」，例如：
+`voiceover/lexicon.txt` 是整個頻道共用的讀音修正表，每次都會套用；某一支影片專用的可以另外寫一個檔案，用 `--lexicon 檔名` 加進來。在表裡加一行「原文=實際要念的寫法」，例如：
 
 ```
 2026年=二零二六年

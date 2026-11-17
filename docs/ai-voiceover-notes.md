@@ -163,7 +163,7 @@ ElevenLabs：帳號已註冊。API 金鑰在 ElevenAPI 平台的「API 密鑰」
 - 語氣標籤改成 `Confident, energetic, brisk pace`
 - **頻道聲音-自有v3**（`H50cNQAWXWJg6dU3bWQz`）：Arthur 用上面的標籤念 5 段聊天稿（約 100 秒）當示範，變聲時把穩定度降到 0.3 以保留起伏，再做即時複製。v3 加上有精神的標籤，快慢變化是 4.2～6.5 字／秒，跟 Arthur 一樣；音高比 Arthur 高一些
 
-等使用者比較後決定用哪一個，或直接用 Arthur。
+使用者選定 v3 加上有精神的標籤，並要求重配整支。`channel-voice.args` 已改成 v3，並開啟逐段文字核對（`--verify`）。
 
 待做的改進：每段自動用語音轉文字核對（目前只抓多念，抓不到念含糊或漏字）；測試段落之間的語氣銜接（request stitching）；建立固定測試題，換聲音或設定前先測；讀音修正表改成頻道共用。
 

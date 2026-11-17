@@ -154,25 +154,85 @@ def synth_azure(text: str, args) -> tuple[bytes, None]:
     return audio, None
 
 
-def forced_alignment(audio: bytes, text: str, key: str) -> dict | None:
-    """用 ElevenLabs 的強制對齊，從成品音檔量出每個字的時間。失敗就回傳 None。"""
+def post_audio(url: str, key: str, fields: dict[str, str], audio: bytes) -> dict | None:
+    """把音檔和幾個文字欄位送給 ElevenLabs（multipart）。失敗就回傳 None。"""
     boundary = "----voiceover" + hashlib.sha1(audio[:256]).hexdigest()
-    body = (
-        f'--{boundary}\r\nContent-Disposition: form-data; name="text"\r\n\r\n'.encode("utf-8")
-        + text.encode("utf-8") + b"\r\n"
-        + f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.mp3"\r\n'
-          f"Content-Type: audio/mpeg\r\n\r\n".encode("utf-8")
+    parts = [
+        f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8")
+        + value.encode("utf-8") + b"\r\n"
+        for name, value in fields.items()
+    ]
+    parts.append(
+        f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.mp3"\r\n'
+        f"Content-Type: audio/mpeg\r\n\r\n".encode("utf-8")
         + audio + f"\r\n--{boundary}--\r\n".encode("utf-8")
     )
     request = urllib.request.Request(
-        "https://api.elevenlabs.io/v1/forced-alignment", data=body, method="POST",
+        url, data=b"".join(parts), method="POST",
         headers={"xi-api-key": key, "Content-Type": f"multipart/form-data; boundary={boundary}"},
     )
     try:
         with urllib.request.urlopen(request, timeout=300) as response:
-            chars = json.loads(response.read()).get("characters") or []
+            return json.loads(response.read())
     except (urllib.error.URLError, ValueError):
         return None
+
+
+_CN_DIGITS = "零一二三四五六七八九"
+
+
+def cn_number(digits: str) -> str:
+    """阿拉伯數字換成中文讀法：四位數以內照數值念，更長的逐字念。"""
+    digits = digits.replace(",", "")
+    if len(digits) > 4 or (len(digits) > 1 and digits[0] == "0"):
+        return "".join(_CN_DIGITS[int(c)] for c in digits)
+    out, pending_zero = "", False
+    for i, c in enumerate(str(int(digits))):
+        unit = ["", "十", "百", "千"][len(str(int(digits))) - 1 - i]
+        if c == "0":
+            pending_zero = True
+            continue
+        if pending_zero and out:
+            out += "零"
+        pending_zero = False
+        out += ("" if c == "1" and unit == "十" and not out else _CN_DIGITS[int(c)]) + unit
+    return out or "零"
+
+
+def comparable(text: str, to_simplified) -> str:
+    """只留下可以比對的字：去掉標籤和標點，數字換成中文讀法，繁體轉簡體。"""
+    text = re.sub(r"\d[\d,]*", lambda m: cn_number(m.group()), TAG_RE.sub("", text))
+    text = to_simplified(text).replace("两", "二")
+    return re.sub(r"[^\u4e00-\u9fff]", "", text)
+
+
+def heard_differently(audio: bytes, spoken: str, key: str) -> str | None:
+    """把剛念好的音檔轉回文字，跟稿子比對。有三個字以上對不上，就回傳差異的說明。
+
+    只差一兩個字的不算，那通常是同音字或語音轉文字的小誤差。
+    """
+    try:
+        from opencc import OpenCC
+    except ImportError:
+        return None
+    result = post_audio("https://api.elevenlabs.io/v1/speech-to-text", key,
+                        {"model_id": "scribe_v1", "language_code": "zh"}, audio)
+    if not result or not result.get("text"):
+        return None
+    convert = OpenCC("t2s").convert
+    script, heard = comparable(spoken, convert), comparable(result["text"], convert)
+    for op, a1, a2, b1, b2 in difflib.SequenceMatcher(None, script, heard, autojunk=False).get_opcodes():
+        if op != "equal" and max(a2 - a1, b2 - b1) >= 3:
+            return f"稿子是「{script[max(0, a1 - 4):a2]}」，聽到的是「{heard[max(0, b1 - 4):b2]}」"
+    return None
+
+
+def forced_alignment(audio: bytes, text: str, key: str) -> dict | None:
+    """用 ElevenLabs 的強制對齊，從成品音檔量出每個字的時間。失敗就回傳 None。"""
+    result = post_audio("https://api.elevenlabs.io/v1/forced-alignment", key, {"text": text}, audio)
+    if not result:
+        return None
+    chars = result.get("characters") or []
     if "".join(c["text"] for c in chars) != text:
         return None
     return {
@@ -462,7 +522,10 @@ def main() -> None:
     parser.add_argument("--style-strength", type=float, default=0.0,
                         help="ElevenLabs 風格誇張度 0～1，高一點更有表現力（v2 有效）")
     parser.add_argument("--t2s", action="store_true", help="配音前把繁體（台灣用語）轉成簡體（大陸用語）")
-    parser.add_argument("--lexicon", type=Path, default=SCRIPT_DIR / "lexicon.txt", help="讀音修正表")
+    parser.add_argument("--lexicon", type=Path, action="append", default=[],
+                        help="這支影片專用的讀音修正表，可以給多個；頻道共用的 voiceover/lexicon.txt 一定會套用")
+    parser.add_argument("--verify", action="store_true",
+                        help="ElevenLabs：每一段念完都轉回文字跟稿子比對，念含糊、漏字或多念就自動重念")
     parser.add_argument("--gap", type=float, default=0.4, help="段落之間的停頓秒數")
     parser.add_argument("--filter", help="額外的 ffmpeg 音訊濾鏡（例如調音色的等化器），在音量標準化之前套用")
     parser.add_argument("--no-compress", action="store_true", help="不做輕度壓縮，保留原本的音量起伏")
@@ -491,7 +554,10 @@ def main() -> None:
     out_dir = args.out or SCRIPT_DIR / "output" / script_path.stem
     seg_dir = out_dir / "segments"
     seg_dir.mkdir(parents=True, exist_ok=True)
-    lexicon = load_lexicon(args.lexicon)
+    lexicon = sorted(
+        (rule for path in [SCRIPT_DIR / "lexicon.txt", *args.lexicon] for rule in load_lexicon(path)),
+        key=lambda rule: -len(rule[0]),
+    )
     synth = ENGINES[args.engine]
 
     pcm_parts, srt_lines, cursor, cue_no = [], [], 0.0, 0
@@ -536,12 +602,17 @@ def main() -> None:
                 audio, timing = synth(spoken, args)
                 mp3_path.write_bytes(audio)
                 gap = unexplained_seconds(timing, len(to_pcm(mp3_path)) / 2 / SAMPLE_RATE)
-                if gap <= MAX_GAP:
+                problem = None
+                if gap > MAX_GAP:
+                    problem = f"有 {gap:.1f} 秒對不上稿子（可能多念了一句或卡住）"
+                elif args.verify and args.engine == "elevenlabs":
+                    problem = heard_differently(audio, spoken, os.environ["ELEVENLABS_API_KEY"])
+                if not problem:
                     break
                 if attempt < 3:
-                    print(f"    有 {gap:.1f} 秒對不上稿子（可能多念了一句或卡住），重念第 {attempt + 1} 次")
+                    print(f"    {problem}，重念第 {attempt + 1} 次")
                 else:
-                    print(f"    注意：重念 3 次後仍有 {gap:.1f} 秒對不上稿子，這一段請人工聽一下")
+                    print(f"    注意：重念 3 次後仍然不對（{problem}），這一段請人工聽一下")
             if timing:
                 timing_path.write_text(json.dumps(timing, ensure_ascii=False))
 
